@@ -32,15 +32,17 @@ __global__ void gemm(float *A, float *B, float* C, int M, int N, int K) {
 
         for (int m = 0; m < Ts; m++) {
 
-            for(int n = 0; n < Ts; n++) {
+            // Ts = 4, Instead of having inner loop in range(0, 4), just load all 4 elements at once using vectorized load
 
-                if (row_offset + m < M && a_col_offset + n < K) sA[threadIdx.y * Ts + m][threadIdx.x * Ts + n] = A[(row_offset + m) * K + a_col_offset + n];
-                else                                                sA[threadIdx.y * Ts + m][threadIdx.x * Ts + n] = 0.0f;
+            float4 tmpA = (row_offset + m < M && a_col_offset + 3 < K) ?
+                            *reinterpret_cast<float4*>(&A[(row_offset + m) * K + a_col_offset]) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-                if (b_row_offset + m < K && col_offset + n < N) sB[threadIdx.y * Ts + m][threadIdx.x * Ts + n] = B[(b_row_offset + m) * N + col_offset + n];
-                else                                                sB[threadIdx.y * Ts + m][threadIdx.x * Ts + n] = 0.0f;
+            float4 tmpB = (b_row_offset + m < K && col_offset + 3 < N) ?
+                            *reinterpret_cast<float4*>(&B[(b_row_offset + m) * K + col_offset]) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-            }
+            *reinterpret_cast<float4*>(&sA[threadIdx.y * Ts + m][threadIdx.x * Ts]) = tmpA;
+            *reinterpret_cast<float4*>(&sB[threadIdx.y * Ts + m][threadIdx.x * Ts]) = tmpB;
+
         }
 
         __syncthreads(); // make sure everone finished loading
@@ -150,7 +152,7 @@ int main() {
 
     // Launch Config
     constexpr int T = 16;
-    constexpr int Ts = 4;
+    constexpr int Ts = 4; // No changing this because of vectorized global load is adjusted on this
 
     constexpr int Bs = T * Ts;
 
